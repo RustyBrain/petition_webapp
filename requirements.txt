@@ -5,3 +5,5 @@ streamlit
 seaborn
 matplotlib
 pydeck
+openpyxl
+xlrd
