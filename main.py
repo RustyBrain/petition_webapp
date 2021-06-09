@@ -8,7 +8,7 @@ import streamlit as st
 import seaborn as sns
 import matplotlib.pyplot as plt
 import pydeck as pdk
-import numpy as np
+
 
 
 def defined_qcut(df, value_series, number_of_bins, bins_for_extras, labels=False, col_name=None):
