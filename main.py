@@ -114,6 +114,7 @@ if url != "":
 
     geog_with_data_only = geog_with_data[['geometry', 'IMD']]
     metadata = r.json()['data']['attributes']
+    st.success('Successfully got data!')
 
     st.title(metadata['action'])
     """
