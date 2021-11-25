@@ -112,6 +112,8 @@ if url != "":
 
     geog_with_data = geog.merge(df, left_on='pcon19nm', right_on='name', how='left')
 
+    geog_with_data = geog_with_data[geog_with_data['pcon19cd'].str.startswith('E', na=False)]
+
     geog_with_data_only = geog_with_data[['geometry', 'IMD']]
     metadata = r.json()['data']['attributes']
     st.success('Successfully got data!')
