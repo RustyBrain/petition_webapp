@@ -9,7 +9,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pydeck as pdk
 
-
+st.title("Petition analyser - who's been signing what petitions")
 
 def defined_qcut(df, value_series, number_of_bins, bins_for_extras, labels=False, col_name=None):
     """
@@ -118,7 +118,7 @@ if url != "":
     metadata = r.json()['data']['attributes']
     st.success('Successfully got data!')
 
-    st.title(metadata['action'])
+    st.header(metadata['action'])
     """
     This page runs analysis on the a petition that has been submitted to the UK Gov petition site. 
     
@@ -134,7 +134,7 @@ if url != "":
     INITIAL_VIEW_STATE = pdk.ViewState(latitude=52, longitude=0, zoom=4, max_zoom=16, pitch=25, bearing=0)
 
     """
-    # Geographical distribution of signatories. 
+    ## Geographical distribution of signatories. 
     The bars represent the number of signatures per child under 5 in those areas. The shading of the constituencies 
     represent the deprivation in that area (more grey is less deprived). 
     """
@@ -144,7 +144,6 @@ if url != "":
     long = geog_lat_long['long'].repeat(round(geog_lat_long['sig_per_child'] * 1000, 0))
     lat = geog_lat_long['lat'].repeat(round(geog_lat_long['sig_per_child'] * 1000, 0))
     hex_data = pd.concat([long, lat], axis=1)
-
 
     st.pydeck_chart(pdk.Deck(
         map_style='mapbox://styles/mapbox/light-v9',
@@ -174,9 +173,8 @@ if url != "":
         width=800,
     ))
 
-
     """
-    # Deprivation
+    ## Deprivation
     The signatures per child under 5 split by deprivation. The less deprived areas have a significantly higher response rate
      than the more deprived areas. 
     """
@@ -188,7 +186,7 @@ if url != "":
     plt.clf()
 
     """
-    # Income deprivation affecting children
+    ## Income deprivation affecting children
     The signatures per child under 5 split by income deprivation affecting children. The less deprived areas have a 
     significantly higher response rate than the more deprived areas. 
     """
@@ -200,7 +198,7 @@ if url != "":
     plt.clf()
 
     """
-    # Employment deprivation 
+    ## Employment deprivation 
     The signatures per child under 5 split by employment deprivation. The less deprived areas have a 
     significantly higher response rate than the more deprived areas. 
     """
