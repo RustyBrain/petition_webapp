@@ -9,7 +9,12 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pydeck as pdk
 
+# Set page header to display in browser
+st.set_page_config(page_title='Petition Analyser')
+
+# Set the title
 st.title("Petition analyser - who's been signing what petitions")
+
 
 def defined_qcut(df, value_series, number_of_bins, bins_for_extras, labels=False, col_name=None):
     """
@@ -58,18 +63,28 @@ def defined_qcut(df, value_series, number_of_bins, bins_for_extras, labels=False
     return df
 
 
+# Need this to be able to get the geojson file
 ssl._create_default_https_context = ssl._create_unverified_context
 
 @st.cache
 def get_geojson():
+    """
+    Gets the geojson file for map
+    :return:
+    """
     return gpd.read_file('http://geoportal1-ons.opendata.arcgis.com/datasets/4c191bee309d4b2d8b2c5b94d2512af9_0.geojson')
 
 
+# Get the geojson file for UK
 geog = get_geojson()
 
 
 @st.cache
 def get_deprivation_and_population_data():
+    """
+    Gets deprivation information and population estimates
+    :return:
+    """
     deprivation_data = pd.read_excel("https://researchbriefings.files.parliament.uk/documents/CBP-7327/CBP7327.xlsx",
                                      sheet_name='2019 Scores', skiprows=6, skipfooter=6)
 
@@ -78,44 +93,71 @@ def get_deprivation_and_population_data():
                                "mid2019sape22dt7/sape22dt7mid2019parliconsyoaestimatesunformatted.zip")
     return deprivation_data, pop_est_zip
 
-
+# Get the deprivation data and population estimates, extract and store locally
 deprivation_data, pop_est_zip = get_deprivation_and_population_data()
-
 z = zipfile.ZipFile(io.BytesIO(pop_est_zip.content))
 z.extractall()
 
+# Set up user input for the petition
 # "https://petition.parliament.uk/petitions/586700.json" <- initally designed for
 url = st.text_input('Add the URL for the petition from https://petition.parliament.uk/petitions')
 
+# Once we have a url
 if url != "":
-    r = requests.get(url + ".json")
+    # Get the data from the petitions website and check to see if it is valid
+    try:
+        r = requests.get(url + ".json")
+        if r.status_code == 404:
+            st.error("This doesn't seem to be a valid url from the petitions website")
+    except:
+        st.error("This doesn't seem to be a valid url from the petitions website")
+
+
+    # get the data for each Constituency as a df and get the metadata as dict
     constituency_data = r.json()['data']['attributes']['signatures_by_constituency']
     petition_data = pd.DataFrame(constituency_data)
+    metadata = r.json()['data']['attributes']
 
+    # merge the petition and deprivation data
     merged = pd.merge(petition_data, deprivation_data, left_on='name', right_on='Constituency')
 
-    pop_est = pd.read_excel("SAPE22DT7-mid-2019-parlicon-syoa-estimates-unformatted.xlsx", sheet_name='Mid-2019 Persons',
-                            skiprows=4)
+    # Get the population estimates. If children are mentioned in the description of the petition then set the age to
+    # under 5s, else use all ages
+    pop_est = pd.read_excel("SAPE22DT7-mid-2019-parlicon-syoa-estimates-unformatted.xlsx",
+                            sheet_name='Mid-2019 Persons', skiprows=4)
+    if 'child' in metadata['background']:
+        pop_est = pop_est[['PCON11CD', 0, 1, 2, 3, 4]]
+        pop_est['total'] = pop_est.sum(axis=1)
+        sig_per = 'Signatures per child'
+    else:
+        pop_est['total'] = pop_est['All Ages']
+        sig_per = 'Signatures per person'
 
-    pop_est = pop_est[['PCON11CD', 0, 1, 2, 3, 4]]
-    pop_est['total_under_5'] = pop_est.sum(axis=1)
-
+    # Merge in the population estimates
     merged = pd.merge(merged, pop_est, left_on='ons_code', right_on='PCON11CD')
 
+    # Allocate the constituency data, populations and deprivation into deprivation deciles using standard qcut method
     df = defined_qcut(merged, 'Index of Multiple Deprivation', 10, [0, 9, 1, 2, 3, 4, 5, 6, 7, 8], col_name='IMD')
     df = defined_qcut(df, 'Income deprivation affecting children index', 10, [0, 9, 1, 2, 3, 4, 5, 6, 7, 8],
                       col_name='Income deprivation affecting children')
+    df = defined_qcut(df, 'Income deprivation', 10, [0, 9, 1, 2, 3, 4, 5, 6, 7, 8],
+                      col_name='Income deprivation')
     df = defined_qcut(df, 'Employment deprivation', 10, [0, 9, 1, 2, 3, 4, 5, 6, 7, 8],
                       col_name='Employment deprivation decile')
 
-    df['sig_per_child'] = df['signature_count'] / df['total_under_5']
+    # Get the signatures per population
+    df['sig_per'] = df['signature_count'] / df['total']
 
+    # Merge the data onto the geojson
     geog_with_data = geog.merge(df, left_on='pcon19nm', right_on='name', how='left')
 
+    # Filter out Scotland, Wales and NI (don't have deprivation data in same format)
     geog_with_data = geog_with_data[geog_with_data['pcon19cd'].str.startswith('E', na=False)]
 
+    # Keep only the relevant fields
     geog_with_data_only = geog_with_data[['geometry', 'IMD']]
-    metadata = r.json()['data']['attributes']
+
+    # Inform the user
     st.success('Successfully got data!')
 
     st.header(metadata['action'])
@@ -124,25 +166,28 @@ if url != "":
     
     The analysis focuses on where the people who have signed the petition live, and the make up of that area.
     """
+    # Inform the user about the petition and how many sigs it got
     st.subheader('Petition information')
     st.write(metadata['background'])
 
     st.subheader('Number of signatures:' )
     st.write(metadata['signature_count'])
 
-
+    # Set the inital state of the map
     INITIAL_VIEW_STATE = pdk.ViewState(latitude=52, longitude=0, zoom=4, max_zoom=16, pitch=25, bearing=0)
 
     """
     ## Geographical distribution of signatories. 
-    The bars represent the number of signatures per child under 5 in those areas. The shading of the constituencies 
-    represent the deprivation in that area (more grey is less deprived). 
+    
     """
+    st.write(f"The bars represent the number of {sig_per} in those areas. The shading of the constituencies \
+              represent the deprivation in that area (more grey is less deprived).")
 
-    geog_lat_long = geog_with_data[['long', 'lat', 'sig_per_child']]
+    # Display map
+    geog_lat_long = geog_with_data[['long', 'lat', 'sig_per']]
     geog_lat_long.dropna(inplace=True)
-    long = geog_lat_long['long'].repeat(round(geog_lat_long['sig_per_child'] * 1000, 0))
-    lat = geog_lat_long['lat'].repeat(round(geog_lat_long['sig_per_child'] * 1000, 0))
+    long = geog_lat_long['long'].repeat(round(geog_lat_long['sig_per'] * 1000, 0))
+    lat = geog_lat_long['lat'].repeat(round(geog_lat_long['sig_per'] * 1000, 0))
     hex_data = pd.concat([long, lat], axis=1)
 
     st.pydeck_chart(pdk.Deck(
@@ -173,38 +218,44 @@ if url != "":
         width=800,
     ))
 
+    # Plot the signatures by deprivation decile for overall deprivation, income deprivation, and employment deprivation
+
     """
     ## Deprivation
-    The signatures per child under 5 split by deprivation. The less deprived areas have a significantly higher response rate
-     than the more deprived areas. 
+     
     """
+    st.write(f"The {sig_per} split by deprivation.")
     deprivation = df.groupby(['IMD']).mean()
     fig, ax = plt.subplots(figsize=(10, 10))
-    sns.barplot(deprivation.index, deprivation['sig_per_child'].values, ax=ax)
-    ax.set(xlabel='Deprivation Decile (1 is least deprived)', ylabel='Signatures per child')
+    sns.barplot(deprivation.index, deprivation['sig_per'].values, ax=ax)
+    ax.set(xlabel='Deprivation Decile (1 is least deprived)', ylabel=sig_per)
     st.pyplot(fig)
     plt.clf()
 
     """
-    ## Income deprivation affecting children
-    The signatures per child under 5 split by income deprivation affecting children. The less deprived areas have a 
-    significantly higher response rate than the more deprived areas. 
+    ## Income deprivation
     """
-    income_kids = df.groupby(['Income deprivation affecting children']).mean()
+    st.write(f"The {sig_per} split by income deprivation.")
+    if sig_per == 'Signatures per child':
+        income = df.groupby(['Income deprivation affecting children']).mean()
+        xlab = 'Income deprivation affecting children decile (1 is least deprived)'
+    else:
+        income = df.groupby(['Income deprivation']).mean()
+        xlab = 'Income deprivation decile (1 is least deprived)'
     fig, ax = plt.subplots(figsize=(10, 10))
-    sns.barplot(income_kids.index, income_kids['sig_per_child'].values, ax=ax)
-    ax.set(xlabel='Income deprivation affecting children decile (1 is least deprived)', ylabel='Signatures per child')
+    sns.barplot(income.index, income['sig_per'].values, ax=ax)
+    ax.set(xlabel=xlab, ylabel=sig_per)
     st.pyplot(fig)
     plt.clf()
 
     """
     ## Employment deprivation 
-    The signatures per child under 5 split by employment deprivation. The less deprived areas have a 
-    significantly higher response rate than the more deprived areas. 
+    
     """
+    st.write(f"The {sig_per} split by employment deprivation.")
     employment_deprivation = df.groupby(['Employment deprivation decile']).mean()
     fig, ax = plt.subplots(figsize=(10, 10))
-    sns.barplot(employment_deprivation.index, employment_deprivation['sig_per_child'].values, ax=ax)
-    ax.set(xlabel='Employment deprivation decile (1 is least deprived)', ylabel='Signatures per child')
+    sns.barplot(employment_deprivation.index, employment_deprivation['sig_per'].values, ax=ax)
+    ax.set(xlabel='Employment deprivation decile (1 is least deprived)', ylabel=sig_per)
     st.pyplot(fig)
     plt.clf()
