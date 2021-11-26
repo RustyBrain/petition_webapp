@@ -72,7 +72,7 @@ def get_geojson():
     Gets the geojson file for map
     :return:
     """
-    return gpd.read_file('http://geoportal1-ons.opendata.arcgis.com/datasets/4c191bee309d4b2d8b2c5b94d2512af9_0.geojson')
+    return gpd.read_file('data/constituencies.geojson')
 
 
 # Get the geojson file for UK
